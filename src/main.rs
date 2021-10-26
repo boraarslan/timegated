@@ -1,6 +1,6 @@
-use std::convert::Infallible;
-
+use std::{convert::Infallible, env, sync::Arc};
 use axum::{
+    AddExtensionLayer,
     extract::{
         multipart::MultipartRejection,
         rejection::{self, ContentLengthLimitRejection},
@@ -11,18 +11,28 @@ use axum::{
     routing::BoxRoute,
     service, Router,
 };
+use sea_orm::{Database, DatabaseConnection};
+use dotenv::dotenv;
 use mime;
 use tower_http::{services::ServeDir, trace::TraceLayer};
-use tree_magic_mini;
+use tree_magic_mini as check_mime_content;
 use uuid::Uuid;
+
+// TODO! Write an async deleter function that will run with the server
+// and make db call for every 10 seconds for the photos that will be 
+// deleted.
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "example_testing=debug,tower_http=debug")
     }
+
     tracing_subscriber::fmt::init();
-    let app = app();
+
+    let db = Database::connect(env::var("DATABASE_URL").unwrap()).await.unwrap();
+    let app = app(db);
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
         .await
@@ -74,7 +84,7 @@ async fn upload(
                 }
 
                 let data = field.bytes().await.unwrap_or_default();
-                let data_mime_type = tree_magic_mini::from_u8(&data);
+                let data_mime_type = check_mime_content::from_u8(&data);
 
                 if !data_mime_type.starts_with("image") {
                     return (
@@ -94,6 +104,8 @@ async fn upload(
                     );
                 }
 
+                //TODO! Write photo uuid and time to database.
+
                 return (StatusCode::OK, format!("/img/{}.jpeg", file_name));
             }
 
@@ -111,7 +123,7 @@ async fn upload(
     }
 }
 
-fn app() -> Router<BoxRoute> {
+fn app(db_connection: DatabaseConnection ) -> Router<BoxRoute> {
     Router::new()
         .route("/upload", post(upload))
         .route("/user/:id", get(greet_user))
@@ -126,6 +138,7 @@ fn app() -> Router<BoxRoute> {
         )
         .route("/", get(root_get_handler))
         .layer(TraceLayer::new_for_http())
+        .layer(AddExtensionLayer::new(Arc::new(db_connection)))
         .boxed()
 }
 

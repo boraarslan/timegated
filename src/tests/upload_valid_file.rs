@@ -2,7 +2,8 @@ use super::*;
 use helpers::build_multipart_request;
 #[tokio::test]
 async fn upload_valid_file() {
-    let app = app();
+    let db = Database::connect(env::var("DATABASE").unwrap()).await.unwrap();
+    let app = app(db);
     let listener = TcpListener::bind("0.0.0.0:0".parse::<SocketAddr>().unwrap()).unwrap();
     let addr = listener.local_addr().unwrap();
 
