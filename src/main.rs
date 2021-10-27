@@ -16,7 +16,7 @@ use chrono::{self, Utc};
 use dotenv::dotenv;
 use entity::*;
 use mime;
-use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
+use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, EntityTrait, Set};
 use std::{convert::Infallible, env};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tree_magic_mini as check_mime_content;
@@ -103,27 +103,33 @@ async fn upload(
                 let photo_uuid = Uuid::new_v4();
                 let file_name = photo_uuid.to_hyphenated();
 
-                if let Err(_) =
-                    tokio::fs::write(format!("user_shots/{}.jpeg", file_name), data).await
-                {
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Error writing to file."),
-                    );
-                }
-
-
                 let current_time_utc = Utc::now().naive_utc();
                 let photo_model = photo_data::ActiveModel {
                     photo_id: Set(photo_uuid),
                     timestamp: Set(current_time_utc),
                 };
+
                 let db = db_connection.0;
 
                 if let Err(_) = photo_model.insert(&db).await {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         format!("Error connecting to database."),
+                    );
+                }
+
+                if let Err(_) =
+                    tokio::fs::write(format!("user_shots/{}.jpeg", file_name), data).await
+                {
+                    // This shouldn't fail. At least thats what i thought when i wrote this. 
+                    let premature_insert = photo_data::Entity::find_by_id(photo_uuid).one(&db).await.unwrap();
+                    // This shouldn't fail either since we (succesfully) inserted it just a moment ago. 
+                    let premature_insert: photo_data::ActiveModel = premature_insert.unwrap().into();
+                    // TODO! If this operation fails init the standart delete sequence. or smthng like that.
+                    let _delete_result = premature_insert.delete(&db).await;
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Error writing to file."),
                     );
                 }
 
