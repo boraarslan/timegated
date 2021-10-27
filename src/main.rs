@@ -1,10 +1,8 @@
 mod entity;
 
-
-use std::{convert::Infallible, env, sync::Arc};
 use axum::{
-    AddExtensionLayer,
     extract::{
+        self,
         multipart::MultipartRejection,
         rejection::{self, ContentLengthLimitRejection},
         ContentLengthLimit, Multipart, Path,
@@ -12,18 +10,20 @@ use axum::{
     handler::{get, post},
     http::StatusCode,
     routing::BoxRoute,
-    service, Router,
+    service, AddExtensionLayer, Router,
 };
-use entity::*;
-use sea_orm::{Database, DatabaseConnection};
+use chrono::{self, Utc};
 use dotenv::dotenv;
+use entity::*;
 use mime;
+use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, Set};
+use std::{convert::Infallible, env};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tree_magic_mini as check_mime_content;
 use uuid::Uuid;
 
 // TODO! Write an async deleter function that will run with the server
-// and make db call for every 10 seconds for the photos that will be 
+// and make db call for every 10 seconds for the photos that will be
 // deleted.
 
 #[tokio::main]
@@ -35,7 +35,9 @@ async fn main() {
 
     tracing_subscriber::fmt::init();
 
-    let db = Database::connect(env::var("DATABASE_URL").unwrap()).await.unwrap();
+    let db = Database::connect(env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
     let app = app(db);
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
@@ -69,6 +71,7 @@ async fn upload(
         ContentLengthLimit<Multipart, { 25 * 1024 * 1024 }>,
         ContentLengthLimitRejection<MultipartRejection>,
     >,
+    db_connection: extract::Extension<DatabaseConnection>,
 ) -> (StatusCode, String) {
     match multipart_body {
         Ok(multipart) => {
@@ -97,7 +100,8 @@ async fn upload(
                     );
                 }
 
-                let file_name = Uuid::new_v4().to_hyphenated();
+                let photo_uuid = Uuid::new_v4();
+                let file_name = photo_uuid.to_hyphenated();
 
                 if let Err(_) =
                     tokio::fs::write(format!("user_shots/{}.jpeg", file_name), data).await
@@ -108,7 +112,20 @@ async fn upload(
                     );
                 }
 
-                //TODO! Write photo uuid and time to database.
+
+                let current_time_utc = Utc::now().naive_utc();
+                let photo_model = photo_data::ActiveModel {
+                    photo_id: Set(photo_uuid),
+                    timestamp: Set(current_time_utc),
+                };
+                let db = db_connection.0;
+
+                if let Err(_) = photo_model.insert(&db).await {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Error connecting to database."),
+                    );
+                }
 
                 return (StatusCode::OK, format!("/img/{}.jpeg", file_name));
             }
@@ -127,7 +144,7 @@ async fn upload(
     }
 }
 
-fn app(db_connection: DatabaseConnection ) -> Router<BoxRoute> {
+fn app(db_connection: DatabaseConnection) -> Router<BoxRoute> {
     Router::new()
         .route("/upload", post(upload))
         .route("/user/:id", get(greet_user))
@@ -142,7 +159,7 @@ fn app(db_connection: DatabaseConnection ) -> Router<BoxRoute> {
         )
         .route("/", get(root_get_handler))
         .layer(TraceLayer::new_for_http())
-        .layer(AddExtensionLayer::new(Arc::new(db_connection)))
+        .layer(AddExtensionLayer::new(db_connection))
         .boxed()
 }
 
