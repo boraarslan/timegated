@@ -1,3 +1,6 @@
+mod entity;
+
+
 use std::{convert::Infallible, env, sync::Arc};
 use axum::{
     AddExtensionLayer,
@@ -11,6 +14,7 @@ use axum::{
     routing::BoxRoute,
     service, Router,
 };
+use entity::*;
 use sea_orm::{Database, DatabaseConnection};
 use dotenv::dotenv;
 use mime;
