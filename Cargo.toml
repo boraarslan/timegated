@@ -17,7 +17,7 @@ sea-orm = { version = "*", features = [
 ], default-features = false }
 dotenv = "*"
 chrono = "*"
-tracing-subscriber = "0.2.22"
+tracing-subscriber = "0.3.1"
 tower-http = {version = "*", features = ["full"]}
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
 serde = "*"
