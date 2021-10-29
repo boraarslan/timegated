@@ -35,7 +35,7 @@ async fn main() {
     let db = Database::connect(env::var("DATABASE_URL").unwrap())
         .await
         .unwrap();
-    
+
     spawn(delete_scheduler(db.clone()));
 
     let app = app(db);
@@ -66,11 +66,12 @@ async fn delete_scheduler(db: DatabaseConnection) {
                 continue;
             }
 
-            if let Err(_) = tokio::fs::remove_file(format!(
+            if tokio::fs::remove_file(format!(
                 "user_shots/{}.jpeg",
                 photo_data.photo_id.clone().unwrap()
             ))
             .await
+            .is_err()
             {
                 // if error occurs reinsert the entry
                 let _ = photo_data.insert(&db).await;
@@ -94,11 +95,14 @@ async fn upload(
         Ok(multipart) => {
             let mut multipart = multipart.0;
 
-            while let Some(field) = multipart.next_field().await.unwrap() {
+            if let Some(field) = multipart.next_field().await.unwrap() {
                 let content_type = field.content_type();
 
                 if content_type == None {
-                    return (StatusCode::BAD_REQUEST, "Content type is empty.".to_string());
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        "Content type is empty.".to_string(),
+                    );
                 }
                 if content_type.unwrap().type_() != mime::IMAGE {
                     return (
@@ -135,8 +139,9 @@ async fn upload(
                     );
                 }
 
-                if let Err(_) =
-                    tokio::fs::write(format!("user_shots/{}.jpeg", file_name), data).await
+                if tokio::fs::write(format!("user_shots/{}.jpeg", file_name), data)
+                    .await
+                    .is_err()
                 {
                     // This shouldn't fail. At least thats what i thought when i wrote this.
                     let premature_insert = photo_data::Entity::find_by_id(photo_uuid)
