@@ -13,7 +13,7 @@ use axum::{
 use chrono::{self, Duration, Utc};
 use dotenv::dotenv;
 use entity::*;
-use mime;
+
 use sea_orm::{
     prelude::*, ActiveModelTrait, Database, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
@@ -62,7 +62,7 @@ async fn delete_scheduler(db: DatabaseConnection) {
             let to_delete: photo_data::ActiveModel = to_delete.into();
             let photo_data = to_delete.clone();
             // even if it fails now it will probably will get deleted next iter.
-            if let Err(_) = to_delete.delete(&db).await {
+            if to_delete.delete(&db).await.is_err() {
                 continue;
             }
 
@@ -98,12 +98,12 @@ async fn upload(
                 let content_type = field.content_type();
 
                 if content_type == None {
-                    return (StatusCode::BAD_REQUEST, format!("Content type is empty."));
+                    return (StatusCode::BAD_REQUEST, "Content type is empty.".to_string());
                 }
                 if content_type.unwrap().type_() != mime::IMAGE {
                     return (
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                        format!("Content must be image."),
+                        "Content must be image.".to_string(),
                     );
                 }
 
@@ -113,7 +113,7 @@ async fn upload(
                 if !data_mime_type.starts_with("image") {
                     return (
                         StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                        format!("Content must be image."),
+                        "Content must be image.".to_string(),
                     );
                 }
 
@@ -128,10 +128,10 @@ async fn upload(
 
                 let db = db_connection.0;
 
-                if let Err(_) = photo_model.insert(&db).await {
+                if photo_model.insert(&db).await.is_err() {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Error connecting to database."),
+                        "Error connecting to database.".to_string(),
                     );
                 }
 
@@ -150,24 +150,24 @@ async fn upload(
                     let _delete_result = premature_insert.delete(&db).await;
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Error writing to file."),
+                        "Error writing to file.".to_string(),
                     );
                 }
 
                 return (StatusCode::OK, format!("/img/{}.jpeg", file_name));
             }
 
-            (StatusCode::OK, format!("Ok"))
+            (StatusCode::OK, "Ok".to_string())
         }
         Err(ContentLengthLimitRejection::PayloadTooLarge(_)) => (
             StatusCode::PAYLOAD_TOO_LARGE,
-            format!("File size must be smaller than 25 MBs."),
+            "File size must be smaller than 25 MBs.".to_string(),
         ),
         Err(ContentLengthLimitRejection::LengthRequired(_)) => (
             StatusCode::LENGTH_REQUIRED,
-            format!("File length required."),
+            "File length required.".to_string(),
         ),
-        Err(_) => (StatusCode::BAD_REQUEST, format!("Bad Request!")),
+        Err(_) => (StatusCode::BAD_REQUEST, "Bad Request!".to_string()),
     }
 }
 
