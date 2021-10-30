@@ -24,6 +24,7 @@ serde = "*"
 futures = "*"
 mime = "*"
 tree_magic_mini = "*"
+tokio-retry = "*"
 
 [dev-dependencies]
 tokio-util = "*"

@@ -13,12 +13,12 @@ use axum::{
 use chrono::{self, Duration, Utc};
 use dotenv::dotenv;
 use entity::*;
-
 use sea_orm::{
     prelude::*, ActiveModelTrait, Database, DatabaseConnection, EntityTrait, QueryFilter, Set,
 };
 use std::{convert::Infallible, env};
 use tokio::{spawn, time::interval};
+use tokio_retry::{strategy::FixedInterval, Retry};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use tree_magic_mini as check_mime_content;
 use uuid::Uuid;
@@ -59,17 +59,24 @@ async fn delete_scheduler(db: DatabaseConnection) {
         println!("{:?}", timegated_photos);
 
         for to_delete in timegated_photos {
-            let to_delete: photo_data::ActiveModel = to_delete.into();
-            let photo_data = to_delete.clone();
+            let photo_data: photo_data::ActiveModel = to_delete.into();
             // even if it fails now it will probably will get deleted next iter.
-            if to_delete.delete(&db).await.is_err() {
+            if Retry::spawn(FixedInterval::from_millis(10).take(3), || async {
+                photo_data.clone().delete(&db).await
+            })
+            .await
+            .is_err()
+            {
                 continue;
             }
 
-            if tokio::fs::remove_file(format!(
-                "user_shots/{}.jpeg",
-                photo_data.photo_id.clone().unwrap()
-            ))
+            if Retry::spawn(FixedInterval::from_millis(10).take(3), || async {
+                tokio::fs::remove_file(format!(
+                    "user_shots/{}.jpeg",
+                    photo_data.photo_id.clone().unwrap()
+                ))
+                .await
+            })
             .await
             .is_err()
             {
@@ -132,16 +139,23 @@ async fn upload(
 
                 let db = db_connection.0;
 
-                if photo_model.insert(&db).await.is_err() {
+                if Retry::spawn(FixedInterval::from_millis(10).take(3), || async {
+                    photo_model.clone().insert(&db).await
+                })
+                .await
+                .is_err()
+                {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Error connecting to database.".to_string(),
                     );
                 }
 
-                if tokio::fs::write(format!("user_shots/{}.jpeg", file_name), data)
-                    .await
-                    .is_err()
+                if Retry::spawn(FixedInterval::from_millis(10).take(3), || async {
+                    tokio::fs::write(format!("user_shots/{}.jpeg", file_name), &data).await
+                })
+                .await
+                .is_err()
                 {
                     // This shouldn't fail. At least thats what i thought when i wrote this.
                     let premature_insert = photo_data::Entity::find_by_id(photo_uuid)
