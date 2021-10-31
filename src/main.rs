@@ -5,7 +5,7 @@ use axum::{
         self, multipart::MultipartRejection, rejection::ContentLengthLimitRejection,
         ContentLengthLimit, Multipart,
     },
-    handler::{get, post},
+    handler::post,
     http::StatusCode,
     routing::BoxRoute,
     service, AddExtensionLayer, Router,
@@ -31,25 +31,32 @@ async fn main() {
     }
 
     tracing_subscriber::fmt::init();
+    
+    let database_url = env::var("DATABASE_URL").unwrap_or("postgres://localhost:5432/postgres".to_string());
+    let timegated_port = env::var("TIMEGATED_PORT").unwrap_or("3000".to_string());
 
-    let db = Database::connect(env::var("DATABASE_URL").unwrap())
+    let db = Database::connect(database_url)
         .await
         .unwrap();
 
     spawn(delete_scheduler(db.clone()));
 
     let app = app(db);
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    axum::Server::bind(
+        &format!("0.0.0.0:{}", timegated_port)
+            .parse()
+            .unwrap(),
+    )
+    .serve(app.into_make_service())
+    .await
+    .unwrap();
 }
 
 async fn delete_scheduler(db: DatabaseConnection) {
     let mut interval = interval(tokio::time::Duration::from_secs(10));
     loop {
         interval.tick().await;
-        let deadline = Utc::now().naive_utc() - Duration::seconds(10);
+        let deadline = Utc::now().naive_utc() - Duration::seconds(43200);
 
         let timegated_photos: Vec<photo_data::Model> = photo_data::Entity::find()
             .filter(photo_data::Column::Timestamp.lt(deadline))
@@ -85,10 +92,6 @@ async fn delete_scheduler(db: DatabaseConnection) {
             }
         }
     }
-}
-
-async fn root_get_handler() -> String {
-    "Hello World!".to_string()
 }
 
 async fn upload(
@@ -202,7 +205,6 @@ fn app(db_connection: DatabaseConnection) -> Router<BoxRoute> {
                 ))
             }),
         )
-        .route("/", get(root_get_handler))
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(db_connection))
         .boxed()
