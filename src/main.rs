@@ -1,14 +1,14 @@
 mod entity;
 
 use axum::{
+    error_handling::HandleErrorExt,
     extract::{
         self, multipart::MultipartRejection, rejection::ContentLengthLimitRejection,
         ContentLengthLimit, Multipart,
     },
-    handler::post,
     http::StatusCode,
-    routing::BoxRoute,
-    service, AddExtensionLayer, Router,
+    routing::{post, service_method_routing},
+    AddExtensionLayer, Router,
 };
 use chrono::{self, Duration, Utc};
 use dotenv::dotenv;
@@ -31,25 +31,20 @@ async fn main() {
     }
 
     tracing_subscriber::fmt::init();
-    
-    let database_url = env::var("DATABASE_URL").unwrap_or("postgres://localhost:5432/postgres".to_string());
+
+    let database_url =
+        env::var("DATABASE_URL").unwrap_or("postgres://localhost:5432/postgres".to_string());
     let timegated_port = env::var("TIMEGATED_PORT").unwrap_or("3000".to_string());
 
-    let db = Database::connect(database_url)
-        .await
-        .unwrap();
+    let db = Database::connect(database_url).await.unwrap();
 
     spawn(delete_scheduler(db.clone()));
 
     let app = app(db);
-    axum::Server::bind(
-        &format!("0.0.0.0:{}", timegated_port)
-            .parse()
-            .unwrap(),
-    )
-    .serve(app.into_make_service())
-    .await
-    .unwrap();
+    axum::Server::bind(&format!("0.0.0.0:{}", timegated_port).parse().unwrap())
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
 
 async fn delete_scheduler(db: DatabaseConnection) {
@@ -193,21 +188,22 @@ async fn upload(
     }
 }
 
-fn app(db_connection: DatabaseConnection) -> Router<BoxRoute> {
+fn app(db_connection: DatabaseConnection) -> Router {
     Router::new()
         .route("/upload", post(upload))
         .nest(
             "/img",
-            service::get(ServeDir::new("user_shots")).handle_error(|error: std::io::Error| {
-                Ok::<_, Infallible>((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Unhandled internal error: {}", error),
-                ))
-            }),
+            service_method_routing::get(ServeDir::new("user_shots")).handle_error(
+                |error: std::io::Error| {
+                    Ok::<_, Infallible>((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Unhandled internal error: {}", error),
+                    ))
+                },
+            ),
         )
         .layer(TraceLayer::new_for_http())
         .layer(AddExtensionLayer::new(db_connection))
-        .boxed()
 }
 
 #[cfg(test)]
