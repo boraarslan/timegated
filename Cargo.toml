@@ -25,6 +25,7 @@ futures = "*"
 mime = "*"
 tree_magic_mini = "*"
 tokio-retry = "*"
+anyhow = "*"
 
 [dev-dependencies]
 tokio-util = "*"
