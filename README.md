@@ -1,6 +1,6 @@
 # Timegated
 
-This project is an async web server written with [Axum](https://github.com/tokio-rs/axum) that hosts uploaded images for 12 hours then deletes after it.
+This project is an async web server written with [Axum](https://github.com/tokio-rs/axum) that hosts uploaded images for 12 hours then deletes it after.
 
 To run clone the repository, download [Rust](https://www.rust-lang.org/tools/install), download [PostgreSQL](https://www.postgresql.org/download/) and run:
 
